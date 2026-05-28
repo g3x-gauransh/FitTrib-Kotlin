@@ -1,0 +1,1043 @@
+# FitTrib: Java to Kotlin + Compose Migration Guide
+
+## 🎯 Learning Objectives
+
+By the end of this migration, you will:
+- ✅ Master Kotlin language fundamentals
+- ✅ Understand Jetpack Compose deeply
+- ✅ Use Coroutines and Flow confidently
+- ✅ Apply SOLID principles in Android
+- ✅ Implement modern architecture patterns
+- ✅ Build scalable, maintainable apps
+- ✅ Create beautiful, interactive UIs
+
+---
+
+# 📅 45-DAY STRUCTURED LEARNING PATH
+
+## Week 1: Kotlin Fundamentals (Days 1-7)
+## Week 2: Coroutines & Repositories (Days 8-14)
+## Week 3: Compose Basics (Days 15-21)
+## Week 4: Complex UIs & Lists (Days 22-28)
+## Week 5: Navigation & Chat (Days 29-35)
+## Week 6: Advanced Features (Days 36-42)
+## Week 7: Polish & Latest Tech (Days 43-45)
+
+---
+
+# 📚 WEEK 1: KOTLIN FUNDAMENTALS
+
+## Day 1: Environment Setup
+
+### 1. Create New Branch
+```bash
+git checkout -b kotlin-compose-migration
+```
+
+### 2. Update build.gradle.kts files
+See build.gradle.kts artifact above
+
+### 3. Sync Gradle
+```
+File → Sync Project with Gradle Files
+```
+
+### 4. Create New Package Structure
+```
+com.example.fittrib/
+├── data/
+│   ├── local/           # DAOs, Database
+│   ├── model/           # Entities (data classes)
+│   └── repository/      # Repositories
+├── domain/
+│   ├── usecase/         # Business logic (SOLID: Single Responsibility)
+│   └── model/           # Domain models (separate from data models)
+├── ui/
+│   ├── theme/           # Compose theming
+│   ├── components/      # Reusable composables
+│   ├── auth/            # Login, Register screens
+│   ├── profile/         # Profile screens
+│   ├── measurements/    # Measurement screens
+│   ├── nutrition/       # Nutrition screens
+│   ├── matching/        # Matching screens
+│   └── chat/            # Chat screens
+└── core/
+    ├── util/            # Utilities
+    └── navigation/      # Navigation setup
+```
+
+## Day 2-3: Convert Entities
+
+### Learning Goals:
+- Data classes
+- Null safety
+- Default parameters
+- Properties vs fields
+
+### Files to Create:
+
+**1. User.kt** (Already provided in artifacts)
+
+**2. Exercise: Convert BodyMeasurement yourself**
+
+Template:
+```kotlin
+@Entity(tableName = "body_measurements")
+data class BodyMeasurement(
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+    val userId: String,
+    val measurementDate: Long = System.currentTimeMillis(),
+    val weight: Float,
+    // Add all other fields with defaults
+)
+```
+
+**Self-Check Questions:**
+- Did you use `val` for immutable fields?
+- Did you add `?` for nullable fields?
+- Did you provide default values?
+- Is it a `data class`?
+
+**3. Create All 8 Entities:**
+- User.kt ✅
+- BodyMeasurement.kt
+- Food.kt
+- FoodLogEntry.kt
+- Match.kt
+- Trib.kt
+- ChatMessage.kt
+- TribMessage.kt
+
+## Day 4-5: Convert DAOs
+
+### Learning Goals:
+- Suspend functions
+- Flow for reactive data
+- Kotlin coroutines basics
+
+### Pattern:
+```kotlin
+@Dao
+interface UserDao {
+    @Insert
+    suspend fun insert(user: User)
+
+    @Query("SELECT * FROM users WHERE userId = :id")
+    suspend fun getUserById(id: String): User?
+
+    @Query("SELECT * FROM users")
+    fun getAllUsersFlow(): Flow<List<User>>
+}
+```
+
+### Exercise: Convert All DAOs
+- UserDao.kt
+- MeasurementDao.kt
+- FoodDao.kt
+- MatchDao.kt
+- ChatDao.kt (NEW)
+- TribChatDao.kt (NEW)
+
+## Day 6-7: AppDatabase & Sealed Classes
+
+### Create AppDatabase.kt
+See artifact above ✅
+
+### Learn Sealed Classes:
+```kotlin
+sealed class Resource<out T> {
+    data class Success<T>(val data: T) : Resource<T>()
+    data class Error(val message: String) : Resource<Nothing>()
+    object Loading : Resource<Nothing>()
+}
+```
+
+**Why sealed classes?**
+- Type-safe error handling
+- Exhaustive when expressions
+- No more if-else chains!
+
+---
+
+# 🔄 WEEK 2: COROUTINES & REPOSITORIES
+
+## Day 8-9: Repository Pattern (SOLID)
+
+### Learning: Single Responsibility Principle
+
+**Bad (Violation):**
+```kotlin
+class UserViewModel {
+    fun saveUser(user: User) {
+        // Database logic here - WRONG!
+        db.userDao().insert(user)
+    }
+}
+```
+
+**Good (SRP):**
+```kotlin
+// Repository handles data
+class UserRepository {
+    suspend fun saveUser(user: User) {
+        dao.insert(user)
+    }
+}
+
+// ViewModel handles UI logic
+class UserViewModel(private val repository: UserRepository) {
+    fun saveUser(user: User) = viewModelScope.launch {
+        repository.saveUser(user)
+    }
+}
+```
+
+### Create Interface (Dependency Inversion):
+
+```kotlin
+interface UserRepository {
+    suspend fun insertUser(user: User): Resource<Unit>
+    suspend fun getUserById(id: String): Resource<User?>
+    fun getAllUsersFlow(): Flow<Resource<List<User>>>
+}
+
+class UserRepositoryImpl(
+    private val dao: UserDao
+) : UserRepository {
+    // Implementation
+}
+```
+
+**SOLID Applied:**
+- S: Single Responsibility (Repository only handles data)
+- O: Open/Closed (Extend with new implementations)
+- L: Liskov Substitution (Any UserRepository works)
+- I: Interface Segregation (Focused interface)
+- D: Dependency Inversion (Depend on abstraction)
+
+### Exercise: Create All Repositories
+- UserRepositoryImpl
+- MeasurementRepositoryImpl
+- NutritionRepositoryImpl
+- MatchRepositoryImpl
+- ChatRepositoryImpl
+- TribChatRepositoryImpl
+
+## Day 10-11: Flow & StateFlow
+
+### Learning: Reactive Programming
+
+**LiveData (Old):**
+```java
+LiveData<List<User>> users = dao.getAllUsers();
+users.observe(this, userList -> {
+    // Update UI
+});
+```
+
+**Flow (New):**
+```kotlin
+val users: Flow<List<User>> = dao.getAllUsersFlow()
+
+viewModelScope.launch {
+    users.collect { userList ->
+        // Update UI
+    }
+}
+```
+
+**StateFlow (ViewModel State):**
+```kotlin
+private val _uiState = MutableStateFlow(UiState())
+val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+// Update state
+_uiState.value = _uiState.value.copy(isLoading = true)
+
+// Collect in Compose
+val state by viewModel.uiState.collectAsStateWithLifecycle()
+```
+
+## Day 12-14: ViewModels with StateFlow
+
+### Create ViewModels for Each Feature:
+
+**ProfileViewModel** (Already provided ✅)
+
+**MeasurementViewModel:**
+```kotlin
+class MeasurementViewModel(
+    private val repository: MeasurementRepository,
+    private val userId: String
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(MeasurementUiState())
+    val uiState = _uiState.asStateFlow()
+
+    init {
+        loadMeasurements()
+    }
+
+    private fun loadMeasurements() {
+        viewModelScope.launch {
+            repository.getMeasurementsFlow(userId).collect { resource ->
+                _uiState.value = when (resource) {
+                    is Resource.Success -> _uiState.value.copy(
+                        measurements = resource.data,
+                        isLoading = false
+                    )
+                    is Resource.Error -> _uiState.value.copy(
+                        error = resource.message,
+                        isLoading = false
+                    )
+                    Resource.Loading -> _uiState.value.copy(isLoading = true)
+                }
+            }
+        }
+    }
+
+    fun addMeasurement(measurement: BodyMeasurement) {
+        viewModelScope.launch {
+            repository.insertMeasurement(measurement)
+        }
+    }
+}
+
+data class MeasurementUiState(
+    val measurements: List<BodyMeasurement> = emptyList(),
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+```
+
+### Exercise: Create All ViewModels
+- LoginViewModel
+- ProfileViewModel
+- MeasurementViewModel
+- NutritionViewModel
+- MatchingViewModel
+- ChatViewModel
+- TribChatViewModel
+
+---
+
+# 🎨 WEEK 3: JETPACK COMPOSE BASICS
+
+## Day 15: Compose Mental Model
+
+### Declarative vs Imperative
+
+**Imperative (XML + Java):**
+```java
+// Step 1: Find view
+TextView tv = findViewById(R.id.textView);
+// Step 2: Set text
+tv.setText("Hello");
+// Step 3: Set color
+tv.setTextColor(Color.BLUE);
+// Step 4: If data changes, repeat steps 2-3
+```
+
+**Declarative (Compose):**
+```kotlin
+@Composable
+fun Greeting(name: String) {
+    Text(
+        text = "Hello, $name",
+        color = Color.Blue
+    )
+}
+// When name changes, Compose rebuilds automatically!
+```
+
+**Key Principle:** UI = f(state)
+- UI is a function of state
+- State changes → UI rebuilds
+- No manual updates needed!
+
+## Day 16-18: Build Login Screen
+
+### Complete LoginScreen.kt (Already provided ✅)
+
+### Key Concepts to Master:
+
+**1. State Management:**
+```kotlin
+// ViewModel state
+private val _email = MutableStateFlow("")
+val email = _email.asStateFlow()
+
+// Composable collects state
+val email by viewModel.email.collectAsStateWithLifecycle()
+
+// User input updates state
+OutlinedTextField(
+    value = email,
+    onValueChange = { viewModel.updateEmail(it) }
+)
+```
+
+**2. Remember:**
+```kotlin
+// Survives recomposition
+var passwordVisible by remember { mutableStateOf(false) }
+
+// Survives process death
+var text by rememberSaveable { mutableStateOf("") }
+```
+
+**3. Side Effects:**
+```kotlin
+// Run once when composable enters
+LaunchedEffect(Unit) {
+    viewModel.loadData()
+}
+
+// Run when key changes
+LaunchedEffect(userId) {
+    viewModel.loadUser(userId)
+}
+```
+
+## Day 19-21: Profile & Edit Screens
+
+### ProfileScreen.kt (Already provided ✅)
+
+### Exercise: Create EditProfileScreen
+
+```kotlin
+@Composable
+fun EditProfileScreen(
+    viewModel: ProfileViewModel,
+    onSaveSuccess: () -> Unit
+) {
+    val user by viewModel.user.collectAsStateWithLifecycle()
+
+    var name by rememberSaveable { mutableStateOf(user?.displayName ?: "") }
+    var bio by rememberSaveable { mutableStateOf(user?.bio ?: "") }
+    var age by rememberSaveable { mutableStateOf(user?.age?.toString() ?: "") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Name") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        OutlinedTextField(
+            value = bio,
+            onValueChange = { bio = it },
+            label = { Text("Bio") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3
+        )
+
+        OutlinedTextField(
+            value = age,
+            onValueChange = { age = it },
+            label = { Text("Age") },
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = {
+                user?.let { currentUser ->
+                    val updated = currentUser.copy(
+                        displayName = name,
+                        bio = bio,
+                        age = age.toIntOrNull() ?: 0
+                    )
+                    viewModel.updateProfile(updated)
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Save Changes")
+        }
+    }
+}
+```
+
+---
+
+# 📱 WEEK 4: COMPLEX UIS & LISTS
+
+## Day 22-24: LazyColumn Mastery
+
+### MeasurementListScreen.kt
+
+```kotlin
+@Composable
+fun MeasurementListScreen(
+    viewModel: MeasurementViewModel,
+    onAddMeasurement: () -> Unit,
+    onViewChart: () -> Unit
+) {
+    val measurements by viewModel.measurements.collectAsStateWithLifecycle()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Measurements") })
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = onAddMeasurement) {
+                Icon(Icons.Default.Add, "Add measurement")
+            }
+        }
+    ) { padding ->
+        if (measurements.isEmpty()) {
+            EmptyState(
+                message = "No measurements yet",
+                actionText = "Add First Measurement",
+                onAction = onAddMeasurement
+            )
+        } else {
+            Column(modifier = Modifier.padding(padding)) {
+                Button(
+                    onClick = onViewChart,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text("View Progress Chart")
+                }
+
+                LazyColumn(
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(
+                        items = measurements,
+                        key = { it.id }
+                    ) { measurement ->
+                        MeasurementCard(measurement = measurement)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MeasurementCard(measurement: BodyMeasurement) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = formatDate(measurement.measurementDate),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "${measurement.weight} lbs",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            if (measurement.bodyFatPercentage > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Body Fat: ${measurement.bodyFatPercentage}%")
+            }
+
+            if (measurement.waist > 0) {
+                Text("Waist: ${measurement.waist} in")
+            }
+        }
+    }
+}
+```
+
+### Key Concepts:
+- LazyColumn for efficient lists
+- key parameter for stable identity
+- Scaffold for Material Design structure
+- Conditional UI with if/when
+
+## Day 25-28: Food Search & Nutrition
+
+### FoodSearchScreen.kt
+
+```kotlin
+@Composable
+fun FoodSearchScreen(
+    viewModel: NutritionViewModel,
+    onFoodSelected: (Food) -> Unit,
+    onBack: () -> Unit
+) {
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
+
+    var showServingsDialog by remember { mutableStateOf(false) }
+    var selectedFood by remember { mutableStateOf<Food?>(null) }
+
+    Scaffold(
+        topBar = {
+            SearchTopBar(
+                query = searchQuery,
+                onQueryChange = viewModel::updateSearchQuery,
+                onBack = onBack
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.padding(padding),
+            contentPadding = PaddingValues(16.dp)
+        ) {
+            items(searchResults) { food ->
+                FoodItem(
+                    food = food,
+                    onClick = {
+                        selectedFood = food
+                        showServingsDialog = true
+                    }
+                )
+            }
+        }
+    }
+
+    if (showServingsDialog && selectedFood != null) {
+        ServingsDialog(
+            food = selectedFood!!,
+            onDismiss = { showServingsDialog = false },
+            onConfirm = { servings ->
+                viewModel.logFood(selectedFood!!, servings)
+                showServingsDialog = false
+                onBack()
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchTopBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onBack: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            TextField(
+                value = query,
+                onValueChange = onQueryChange,
+                placeholder = { Text("Search foods...") },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
+                )
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+            }
+        }
+    )
+}
+```
+
+---
+
+# 🧭 WEEK 5: NAVIGATION
+
+## Day 29-31: Compose Navigation
+
+### Create Navigation Graph
+
+```kotlin
+package com.example.fittrib.core.navigation
+
+sealed class Screen(val route: String) {
+    object Login : Screen("login")
+    object Register : Screen("register")
+    object ProfileWizard : Screen("profile_wizard/{userId}") {
+        fun createRoute(userId: String) = "profile_wizard/$userId"
+    }
+    object Main : Screen("main")
+    object Profile : Screen("profile")
+    object EditProfile : Screen("edit_profile")
+    object AddMeasurement : Screen("add_measurement")
+    object Chart : Screen("chart")
+    object FoodSearch : Screen("food_search")
+    object Chat : Screen("chat/{otherUserId}") {
+        fun createRoute(otherUserId: String) = "chat/$otherUserId"
+    }
+    object TribChat : Screen("trib_chat/{tribId}") {
+        fun createRoute(tribId: String) = "trib_chat/$tribId"
+    }
+}
+
+@Composable
+fun FitTribNavGraph(
+    navController: NavHostController,
+    startDestination: String
+) {
+    NavHost(
+        navController = navController,
+        startDestination = startDestination
+    ) {
+        composable(Screen.Login.route) {
+            LoginScreen(
+                viewModel = hiltViewModel(),
+                onLoginSuccess = {
+                    navController.navigate(Screen.Main.route) {
+                        popUpTo(Screen.Login.route) { inclusive = true }
+                    }
+                },
+                onNavigateToRegister = {
+                    navController.navigate(Screen.Register.route)
+                }
+            )
+        }
+
+        composable(
+            route = Screen.Chat.route,
+            arguments = listOf(navArgument("otherUserId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val otherUserId = backStackEntry.arguments?.getString("otherUserId")!!
+            ChatScreen(
+                viewModel = hiltViewModel(),
+                otherUserName = "User Name",
+                onBack = { navController.popBackStack() }
+            )
+        }
+    }
+}
+```
+
+## Day 32-35: Bottom Navigation
+
+### MainScreen.kt with Bottom Nav
+
+```kotlin
+@Composable
+fun MainScreen(
+    navController: NavHostController
+) {
+    val items = listOf(
+        BottomNavItem("Profile", Icons.Default.Person, Screen.Profile.route),
+        BottomNavItem("Track", Icons.Default.FitnessCenter, "measurements"),
+        BottomNavItem("Nutrition", Icons.Default.Restaurant, "nutrition"),
+        BottomNavItem("Match", Icons.Default.People, "matching")
+    )
+
+    var selectedItem by remember { mutableIntStateOf(0) }
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                items.forEachIndexed { index, item ->
+                    NavigationBarItem(
+                        selected = selectedItem == index,
+                        onClick = { selectedItem = index },
+                        icon = { Icon(item.icon, item.label) },
+                        label = { Text(item.label) }
+                    )
+                }
+            }
+        }
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding)) {
+            when (selectedItem) {
+                0 -> ProfileScreen(...)
+                1 -> MeasurementListScreen(...)
+                2 -> NutritionScreen(...)
+                3 -> MatchingScreen(...)
+            }
+        }
+    }
+}
+```
+
+---
+
+# 💬 WEEK 6: CHAT FEATURES
+
+## Day 36-38: Buddy Chat (Complete Implementation ✅)
+
+See ChatScreen.kt artifact above
+
+## Day 39-40: Trib Chat
+
+```kotlin
+@Composable
+fun TribChatScreen(
+    viewModel: TribChatViewModel,
+    tribName: String,
+    onBack: () -> Unit
+) {
+    val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val messageText by viewModel.messageText.collectAsStateWithLifecycle()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(tribName) },
+                subtitle = { Text("${viewModel.memberCount} members") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(messages, key = { it.messageId }) { message ->
+                    TribMessageBubble(
+                        message = message,
+                        senderName = message.senderName,
+                        isOwnMessage = message.senderId == viewModel.currentUserId
+                    )
+                }
+            }
+
+            ChatInputBar(
+                messageText = messageText,
+                onMessageTextChange = viewModel::updateMessageText,
+                onSendMessage = viewModel::sendMessage
+            )
+        }
+    }
+}
+
+@Composable
+private fun TribMessageBubble(
+    message: TribMessage,
+    senderName: String,
+    isOwnMessage: Boolean
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = if (isOwnMessage) Alignment.End else Alignment.Start
+    ) {
+        if (!isOwnMessage) {
+            Text(
+                text = senderName,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 12.dp, bottom = 2.dp)
+            )
+        }
+
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = if (isOwnMessage)
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) {
+            Text(
+                text = message.messageText,
+                modifier = Modifier.padding(12.dp),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+}
+```
+
+---
+
+# 🌟 WEEK 7: LATEST FEATURES & POLISH
+
+## Day 41-42: Material 3 Dynamic Theming
+
+### Theme.kt
+
+```kotlin
+package com.example.fittrib.ui.theme
+
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+
+@Composable
+fun FitTribTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    val colorScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = LocalContext.current
+            if (darkTheme) dynamicDarkColorScheme(context)
+            else dynamicLightColorScheme(context)
+        }
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = Typography,
+        content = content
+    )
+}
+
+private val LightColorScheme = lightColorScheme(
+    primary = md_theme_light_primary,
+    onPrimary = md_theme_light_onPrimary,
+    primaryContainer = md_theme_light_primaryContainer,
+    // ... Material You color tokens
+)
+```
+
+## Day 43-44: Animations & Transitions
+
+### Add Polish with Animations
+
+```kotlin
+@Composable
+fun AnimatedMeasurementCard(measurement: BodyMeasurement) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+        onClick = { expanded = !expanded }
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Weight: ${measurement.weight} lbs")
+
+            AnimatedVisibility(visible = expanded) {
+                Column {
+                    Text("Chest: ${measurement.chest} in")
+                    Text("Waist: ${measurement.waist} in")
+                    Text("Hips: ${measurement.hips} in")
+                }
+            }
+        }
+    }
+}
+```
+
+## Day 45: App Functions (Latest from Google I/O 2026)
+
+### Implement App Functions
+
+```kotlin
+// This is a placeholder for latest Google I/O 2026 features
+// Real implementation depends on actual API releases
+
+@Composable
+fun AppFunctionIntegration() {
+    // Add workout to calendar
+    // Quick actions from launcher
+    // Widget support
+    // Cross-app functionality
+}
+```
+
+---
+
+# ✅ MIGRATION COMPLETION CHECKLIST
+
+## Week 1: Data Layer
+- [ ] All entities converted to Kotlin data classes
+- [ ] All DAOs use suspend functions and Flow
+- [ ] AppDatabase.kt created
+- [ ] Sealed classes for results
+
+## Week 2: Business Logic
+- [ ] All repositories created with interfaces
+- [ ] ViewModels using StateFlow
+- [ ] SOLID principles applied
+- [ ] Error handling with sealed classes
+
+## Week 3: Basic UI
+- [ ] Login screen in Compose
+- [ ] Profile screen in Compose
+- [ ] Edit profile in Compose
+- [ ] State management working
+
+## Week 4: Lists
+- [ ] Measurement list with LazyColumn
+- [ ] Food list with search
+- [ ] Match discovery cards
+- [ ] Trib list
+
+## Week 5: Navigation & Chat
+- [ ] Navigation graph complete
+- [ ] Bottom navigation working
+- [ ] Buddy chat screen
+- [ ] Trib chat screen
+
+## Week 6-7: Polish
+- [ ] Material 3 theming
+- [ ] Animations added
+- [ ] Performance optimized
+- [ ] Latest features integrated
+
+---
+
+# 🎓 LEARNING OUTCOMES
+
+After completing this migration, you will understand:
+
+**Kotlin:**
+- Data classes and sealed classes
+- Null safety and type system
+- Extension functions
+- Coroutines and Flow
+- Collections and higher-order functions
+
+**Jetpack Compose:**
+- Declarative UI paradigm
+- State management and hoisting
+- Recomposition and performance
+- Material 3 components
+- Navigation
+- Side effects and lifecycle
+
+**Architecture:**
+- MVVM with Compose
+- Repository pattern
+- Use cases (Clean Architecture)
+- Dependency Injection
+- SOLID principles
+
+**Modern Android:**
+- Coroutines for async
+- Flow for reactive streams
+- StateFlow for UI state
+- Room with Kotlin
+- Material You theming
+
+---
+
+# 🚀 START YOUR MIGRATION!
+
+Begin with Day 1: Convert your first entity (User.kt) and see how much simpler Kotlin makes your code!
+
+Each week builds on the previous, ensuring deep understanding before moving forward.
+
+Good luck on your Kotlin + Compose journey! 🎉
